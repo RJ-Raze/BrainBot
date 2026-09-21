@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Uploads
+uploads/
+
+# Database (keep migrations committed so others can `prisma migrate deploy`)
+*.db
+*.db-journal
+
+# Prisma
+# NOTE: prisma/migrations/ is intentionally tracked (not ignored) —
+# it lets a fresh clone recreate the schema. Only the generated client
+# under node_modules/.prisma is excluded via node_modules/ above.
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Data (keep in git for demo, remove for production)
+data/
+
+# Local portable database and deployment data
+tools/
+.env.deploy
+backups/
+test-results/

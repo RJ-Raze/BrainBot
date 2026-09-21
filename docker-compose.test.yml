@@ -1,0 +1,13 @@
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: brainbot_test
+  server:
+    environment:
+      POSTGRES_DB: brainbot_test
+      LLM_MOCK: 'true'
+      ALLOW_MOCK_PRODUCTION: 'true'
+      BRAINBOT_TEST: '1'
+  web:
+    ports: !override
+      - '127.0.0.1:8081:80'

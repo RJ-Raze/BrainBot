@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>BrainBot — Knowledge, in motion.</title>
+    <style>
+      [hidden] {
+        display: none !important;
+      }
+      :root {
+        color-scheme: dark;
+        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        color: #edf3ff;
+        background: #080b11;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      main {
+        max-width: 1420px;
+        margin: auto;
+        padding: 36px 44px 48px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 32px;
+      }
+      .brand {
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 4px;
+      }
+      .edition {
+        font:
+          12px Consolas,
+          monospace;
+        letter-spacing: 2px;
+        color: #8599b6;
+      }
+      .stage {
+        background: #05070b;
+        border: 1px solid #27344a;
+        border-radius: 18px;
+        overflow: hidden;
+        box-shadow: 0 30px 100px #0006;
+      }
+      video {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16/9;
+      }
+      section {
+        display: flex;
+        justify-content: space-between;
+        gap: 30px;
+        margin-top: 30px;
+      }
+      h1 {
+        font-size: 26px;
+        font-weight: 500;
+        letter-spacing: 1px;
+        margin: 0 0 12px;
+      }
+      p {
+        color: #8a9ab2;
+        font-size: 14px;
+        margin: 0;
+        line-height: 1.8;
+      }
+      .download {
+        height: 42px;
+        padding: 11px 20px;
+        text-decoration: none;
+        color: #cde2ff;
+        border: 1px solid #455b79;
+        border-radius: 24px;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 27px;
+      }
+      button {
+        background: none;
+        border: 1px solid #263449;
+        border-radius: 22px;
+        color: #acbdd5;
+        padding: 10px 17px;
+        cursor: pointer;
+        font: 13px inherit;
+      }
+      button:hover,
+      button:focus-visible {
+        background: #192940;
+        color: white;
+        border-color: #7bacee;
+      }
+      footer {
+        margin-top: 28px;
+        color: #63748e;
+        font-size: 12px;
+        letter-spacing: 1px;
+      }
+      @media (max-width: 700px) {
+        main {
+          padding: 22px 16px;
+        }
+        header {
+          margin-bottom: 22px;
+        }
+        .edition {
+          font-size: 9px;
+        }
+        h1 {
+          font-size: 20px;
+        }
+        section {
+          display: block;
+        }
+        .download {
+          display: inline-block;
+          margin-top: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="brand">BRAINBOT</div>
+        <div class="edition">PRODUCT FILM / 2026</div>
+      </header>
+      <div class="stage">
+        <video
+          id="film"
+          controls
+          playsinline
+          preload="metadata"
+          poster="./keyframes/90.png"
+          src="./brainbot-demo.mp4"
+        ></video>
+      </div>
+      <section>
+        <div>
+          <h1>让每一次思考，成为团队的积累。</h1>
+          <p id="summary">
+            45 秒 · 1080p · 原创配乐<br />从讨论到共享记忆，让证据与行动自然相连。
+          </p>
+        </div>
+        <div>
+          <button id="play">播放影片</button>
+          <a class="download" href="./brainbot-demo.mp4" download>下载 MP4 ↗</a>
+        </div>
+      </section>
+      <nav aria-label="视频章节">
+        <button data-time="0">00:00 开场</button
+        ><button data-time="6">00:06 AI 协作</button
+        ><button data-time="15">00:15 共享记忆</button
+        ><button data-time="25">00:25 科研证据</button
+        ><button data-time="35">00:35 推进行动</button
+        ><button data-time="41">00:41 品牌落版</button>
+      </nav>
+      <footer>
+        KNOWLEDGE, IN MOTION.　/　演示数据 · 产品界面与重点内容动画
+      </footer>
+    </main>
+    <script>
+      const film = document.getElementById("film");
+      const query = new URLSearchParams(location.search);
+      if (query.get("sample") === "1") {
+        film.src =
+          query.get("format") === "webm" ? "./sample.webm" : "./sample.mp4";
+        document.querySelector("h1").textContent =
+          "转场样片 · AI 协作 → 共享记忆";
+        document.getElementById("summary").textContent =
+          "6 秒 · 1080p · 转场检查";
+        document.querySelector("nav").hidden = true;
+        document.querySelector(".download").hidden = true;
+      }
+      document.getElementById("play").addEventListener("click", () => {
+        if (film.paused) film.play().catch(() => {});
+        else film.pause();
+      });
+      film.addEventListener(
+        "play",
+        () => (document.getElementById("play").textContent = "暂停影片"),
+      );
+      film.addEventListener(
+        "pause",
+        () => (document.getElementById("play").textContent = "播放影片"),
+      );
+      document.querySelectorAll("button[data-time]").forEach((button) =>
+        button.addEventListener("click", () => {
+          film.currentTime = Number(button.dataset.time);
+          film.play().catch(() => {});
+        }),
+      );
+    </script>
+  </body>
+</html>

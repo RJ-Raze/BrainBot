@@ -1,0 +1,44 @@
+const router = require('express').Router({ mergeParams: true });
+const db = require('../db');
+const { authRequired } = require('../middleware/auth');
+const { requireProjectAccess } = require('../middleware/permission');
+const { ok, wrap, E } = require('../middleware/error');
+const { sourceSnapshot, validSources } = require('../services/review');
+const hub = require('../services/events');
+router.use(authRequired, requireProjectAccess);
+router.get('/:mid/history', wrap(async (req, res) => {
+  const memory = await db.memory.findFirst({ where: { id: req.params.mid, projectId: req.project.id } });
+  if (!memory) throw E.notFound();
+  const items = await db.memoryRevision.findMany({ where: { memoryId: memory.id }, orderBy: { version: 'desc' } });
+  const sourcesValid = items.length ? await validSources(db, req.project.id, items[0].sources) : true;
+  ok(res, { memory, items, sources_valid: sourcesValid });
+}));
+router.post('/:mid/transition', wrap(async (req, res) => {
+  const { action, expectedVersion, title, content, source_ids, reason } = req.body || {};
+  if (!Number.isInteger(expectedVersion)) throw E.param('expectedVersion 必填');
+  if (!['submit', 'approve', 'reject', 'revise', 'invalidate'].includes(action)) throw E.param('无效审核动作');
+  const item = await db.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM memories WHERE id = ${req.params.mid}::uuid FOR UPDATE`;
+    const m = await tx.memory.findFirst({ where: { id: req.params.mid, projectId: req.project.id } });
+    if (!m) throw E.notFound();
+    if (m.version !== expectedVersion) throw E.conflict('记录已更新，请刷新后再操作');
+    if (['approve', 'reject', 'invalidate'].includes(action) && !req.isLeader) throw E.noWrite('仅负责人可以审核');
+    const previous = await tx.memoryRevision.findFirst({ where: { memoryId: m.id }, orderBy: { version: 'desc' } });
+    if (action === 'approve' && m.sourceUserId === req.user.id && req.project.settings?.allow_self_review !== true) throw E.noWrite('需要另一位负责人审核；个人确认须在项目设置中显式启用');
+    const allowed = { submit: ['draft', 'rejected', 'legacy_unreviewed'], approve: ['submitted'], reject: ['submitted'], revise: ['approved', 'draft', 'rejected', 'invalidated', 'legacy_unreviewed'], invalidate: ['approved'] };
+    if (!allowed[action].includes(m.reviewStatus)) throw E.conflict('当前状态不允许这个动作');
+    if (['reject', 'invalidate'].includes(action) && !String(reason || '').trim()) throw E.param('请填写原因');
+    const nextTitle = action === 'revise' ? String(title || '').trim() : m.title;
+    const nextContent = action === 'revise' ? String(content || '').trim() : m.content;
+    if (!nextTitle || nextTitle.length > 255 || !nextContent || nextContent.length > 30000) throw E.param('标题或正文长度无效');
+    const sources = source_ids !== undefined && ['submit', 'revise'].includes(action) ? await sourceSnapshot(tx, m.projectId, source_ids) : previous?.sources || [];
+    if (action === 'approve' && !await validSources(tx, m.projectId, sources)) throw E.conflict('来源变更或未核验，请先修订来源');
+    if (!previous) await tx.memoryRevision.create({ data: { memoryId: m.id, version: m.version, title: m.title, content: m.content, status: m.reviewStatus, actorId: m.sourceUserId || req.user.id } });
+    const status = { submit: 'submitted', approve: 'approved', reject: 'rejected', revise: 'draft', invalidate: 'invalidated' }[action];
+    await tx.memoryRevision.create({ data: { memoryId: m.id, version: m.version + 1, title: nextTitle, content: nextContent, status, actorId: req.user.id, sources, reason: action === 'approve' && m.sourceUserId === req.user.id ? '个人确认（非团队复核）' : String(reason || '') } });
+    return tx.memory.update({ where: { id: m.id }, data: { version: { increment: 1 }, reviewStatus: status, title: nextTitle, content: nextContent, ...(action === 'revise' && { sourceUserId: req.user.id }) } });
+  });
+  hub.emit(req.project.id, 'memory.promoted', { memory_id: item.id, action, version: item.version });
+  ok(res, item);
+}));
+module.exports = router;

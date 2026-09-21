@@ -1,0 +1,17 @@
+groups:
+  - name: availability
+    rules:
+      - alert: BrainBotUnavailable
+        expr: probe_success == 0 or up{job="api-readiness"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: BrainBot readiness probe failed
+      - alert: BrainBotSlow
+        expr: probe_duration_seconds > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: BrainBot readiness exceeds two seconds

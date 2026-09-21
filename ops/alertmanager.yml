@@ -1,0 +1,8 @@
+route:
+  receiver: local-console
+  group_wait: 30s
+  repeat_interval: 4h
+receivers:
+  - name: local-console
+# Alerts are available on localhost:9093. Configure your team's receiver
+# before public launch; no third-party messages are sent by this template.

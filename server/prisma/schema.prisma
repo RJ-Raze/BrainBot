@@ -1,0 +1,577 @@
+// ============================================================
+// 多人知识协作智能 Web 平台 - Prisma Schema（19 张表，v2.0）
+// 依据：docs/数据库与接口设计 附录A + 骨架v2.0 第五章增量
+//   +search_tasks +task_references
+//   memories +creator_rid +source_conversation_id +source_message_range
+//   roles +temp_limit；paper_cards 简化为 notes+tags
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------- 协作底座 11 张 ----------------
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  username     String    @unique @db.VarChar(64)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  email        String?   @unique @db.VarChar(128)
+  displayName  String?   @map("display_name") @db.VarChar(64)
+  avatarUrl    String?   @map("avatar_url")
+  status       Int       @default(1) @db.SmallInt // 1=正常 0=禁用
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  projectsOwned         Project[]       @relation("ProjectOwner")
+  projectMembers        ProjectMember[]
+  conversationsCreated  Conversation[]
+  messagesSent          Message[]
+  memoriesSourced       Memory[]
+  tasksAssigned         Task[]          @relation("TaskAssignee")
+  documentsEdited       Document[]
+  workProductsCreated   WorkProduct[]
+  llmCalls              LlmCall[]
+  paperCardsAuthored    PaperCard[]
+  directionNodes        DirectionNode[]
+  experimentsCreated    Experiment[]
+  searchTasksCreated    SearchTask[]
+  taskReferences        TaskReference[]
+  researchFilesUploaded ResearchFile[]
+  teamMessages          TeamMessage[]
+
+  @@map("users")
+}
+
+model Project {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(128)
+  description String?
+  domain      String?  @db.VarChar(64)
+  coverUrl    String?  @map("cover_url")
+  status      Int      @default(0) @db.SmallInt // 0=初始化中 1=运行中 2=已完成 3=归档
+  inviteCode  String?  @unique @map("invite_code") @db.VarChar(16) // 组队邀请码（初始化阶段生成）
+  ownerId     String   @map("owner_id") @db.Uuid
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  owner          User            @relation("ProjectOwner", fields: [ownerId], references: [id])
+  roles          Role[]
+  members        ProjectMember[]
+  conversations  Conversation[]
+  messages       Message[]
+  memories       Memory[]
+  tasks          Task[]
+  documents      Document[]
+  workProducts   WorkProduct[]
+  llmCalls       LlmCall[]
+  papers         Paper[]
+  paperCards     PaperCard[]
+  directionNodes DirectionNode[]
+  decompResults  DecompResult[]
+  experiments    Experiment[]
+  searchTasks    SearchTask[]
+  researchFiles  ResearchFile[]
+  briefs         MeetingBrief[]
+  teamMessages   TeamMessage[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@map("projects")
+}
+
+model TeamMessage {
+  seq       BigInt   @id @default(autoincrement())
+  requestId String   @unique @map("request_id") @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  senderId  String   @map("sender_id") @db.Uuid
+  content   String   @db.VarChar(5000)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sender  User    @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, seq])
+  @@index([projectId, senderId, createdAt])
+  @@map("team_messages")
+}
+
+model Role {
+  id           String   @id @default(uuid()) @db.Uuid
+  projectId    String   @map("project_id") @db.Uuid
+  name         String   @db.VarChar(64)
+  description  String?
+  memberName   String?  @map("member_name") @db.VarChar(64) // 该角色预留给哪位成员（初始化时创立人指定）
+  systemPrompt String   @map("system_prompt")
+  llmConfig    Json     @default("{}") @map("llm_config")
+  tempLimit    Float?   @map("temp_limit") // v2.0：temperature 角色上限（断点⑤）
+  color        String?  @db.VarChar(16)
+  icon         String?  @db.VarChar(32)
+  sortOrder    Int      @default(0) @map("sort_order")
+  isArchived   Boolean  @default(false) @map("is_archived") // v2.0：只软删除，永不物理删除
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  members       ProjectMember[]
+  conversations Conversation[]
+  messages      Message[]
+  memories      Memory[]
+  tasks         Task[]
+  workProducts  WorkProduct[]
+  llmCalls      LlmCall[]
+  paperCards    PaperCard[]
+  decompResults DecompResult[]
+  experiments   Experiment[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
+  @@map("roles")
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  isLeader  Boolean  @default(false) @map("is_leader")
+  joinedAt  DateTime @default(now()) @map("joined_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role    Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId, roleId])
+  @@index([projectId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("project_members")
+}
+
+model Conversation {
+  id            String    @id @default(uuid()) @db.Uuid
+  projectId     String    @map("project_id") @db.Uuid
+  roleId        String    @map("role_id") @db.Uuid
+  title         String    @db.VarChar(255)
+  contextType   String    @default("general") @map("context_type") @db.VarChar(32)
+  contextRefId  String?   @map("context_ref_id") @db.Uuid
+  messageCount  Int       @default(0) @map("message_count")
+  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz(6)
+  isPinned      Boolean   @default(false) @map("is_pinned")
+  isArchived    Boolean   @default(false) @map("is_archived")
+  createdBy     String    @map("created_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role     Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  creator  User      @relation(fields: [createdBy], references: [id])
+  messages Message[]
+
+  @@index([projectId, roleId])
+  @@index([contextType, contextRefId])
+  @@index([lastMessageAt(sort: Desc)])
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(uuid()) @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  projectId      String   @map("project_id") @db.Uuid
+  roleId         String   @map("role_id") @db.Uuid
+  senderType     String   @map("sender_type") @db.VarChar(16) // user / assistant / system
+  senderUserId   String?  @map("sender_user_id") @db.Uuid
+  content        String
+  tokenIn        Int      @default(0) @map("token_in")
+  tokenOut       Int      @default(0) @map("token_out")
+  llmCallId      String?  @map("llm_call_id") @db.Uuid
+  attachments    Json     @default("[]")
+  meta           Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  sender       User?        @relation(fields: [senderUserId], references: [id])
+  memories     Memory[]
+
+  @@index([conversationId, createdAt])
+  @@index([roleId])
+  @@index([projectId])
+  @@map("messages")
+}
+
+model Memory {
+  id                   String   @id @default(uuid()) @db.Uuid
+  projectId            String   @map("project_id") @db.Uuid
+  category             String   @db.VarChar(32) // conclusion/fact/paper_card/todo/risk/decision/snippet
+  title                String   @db.VarChar(255)
+  content              String
+  sourceRoleId         String?  @map("source_role_id") @db.Uuid
+  sourceUserId         String?  @map("source_user_id") @db.Uuid
+  sourceMsgId          String?  @unique @map("source_msg_id") @db.Uuid
+  // ---- v2.0 溯源三字段（字符串 ID 存"出生证明"，不设外键，防级联丢失）----
+  creatorRid           String?  @map("creator_rid") @db.VarChar(64)
+  sourceConversationId String?  @map("source_conversation_id") @db.VarChar(64)
+  sourceMessageRange   Json?    @map("source_message_range") // {"from":"m_101","to":"m_103"}
+  tags                 String[]
+  importance           Int      @default(3) @db.SmallInt // 1-5
+  isPinned             Boolean  @default(false) @map("is_pinned")
+  promotedAt           DateTime @default(now()) @map("promoted_at") @db.Timestamptz(6)
+  reviewStatus         String   @default("draft") @map("review_status")
+  version              Int      @default(1)
+  revisions            MemoryRevision[]
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceRole Role?    @relation(fields: [sourceRoleId], references: [id])
+  sourceUser User?    @relation(fields: [sourceUserId], references: [id])
+  sourceMsg  Message? @relation(fields: [sourceMsgId], references: [id])
+
+  @@index([projectId, category])
+  @@map("memories")
+}
+
+model Task {
+  id          String    @id @default(uuid()) @db.Uuid
+  projectId   String    @map("project_id") @db.Uuid
+  parentId    String?   @map("parent_id") @db.Uuid
+  roleId      String?   @map("role_id") @db.Uuid
+  title       String    @db.VarChar(255)
+  description String?
+  taskType    String    @default("general") @map("task_type") @db.VarChar(32)
+  status      String    @default("todo") @db.VarChar(16) // todo/doing/blocked/review/done
+  priority    Int       @default(3) @db.SmallInt
+  assigneeId  String?   @map("assignee_id") @db.Uuid
+  dueDate     DateTime? @map("due_date") @db.Date
+  progress    Int       @default(0) @db.SmallInt
+  meta        Json      @default("{}")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent         Task?           @relation("TaskTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children       Task[]          @relation("TaskTree")
+  role           Role?           @relation(fields: [roleId], references: [id])
+  assignee       User?           @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  workProducts   WorkProduct[]
+  directionNodes DirectionNode[]
+  decompResults  DecompResult[]
+  experiments    Experiment[]
+  references     TaskReference[]
+
+  @@index([projectId, status])
+  @@index([roleId])
+  @@index([parentId])
+  @@map("tasks")
+}
+
+model Document {
+  id           String   @id @default(uuid()) @db.Uuid
+  projectId    String   @map("project_id") @db.Uuid
+  parentId     String?  @map("parent_id") @db.Uuid
+  title        String   @db.VarChar(255)
+  content      String   @default("")
+  docType      String   @default("note") @map("doc_type") @db.VarChar(32)
+  isAutoSynced Boolean  @default(true) @map("is_auto_synced")
+  lastEditorId String?  @map("last_editor_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project    Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent     Document?  @relation("DocTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children   Document[] @relation("DocTree")
+  lastEditor User?      @relation(fields: [lastEditorId], references: [id])
+
+  @@index([projectId])
+  @@index([parentId])
+  @@map("documents")
+}
+
+model ResearchFile {
+  id           String   @id @default(uuid()) @db.Uuid
+  projectId    String   @map("project_id") @db.Uuid
+  uploadedBy   String   @map("uploaded_by") @db.Uuid
+  originalName String   @map("original_name") @db.VarChar(255)
+  storedName   String   @map("stored_name") @db.VarChar(255)
+  mimeType     String   @map("mime_type") @db.VarChar(128)
+  extension    String   @db.VarChar(16)
+  sizeBytes    Int      @map("size_bytes")
+  contentHash  String   @map("content_hash") @db.VarChar(64)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project  Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploader User    @relation(fields: [uploadedBy], references: [id])
+
+  @@unique([projectId, contentHash])
+  @@index([projectId, createdAt(sort: Desc)])
+  @@index([uploadedBy])
+  @@map("research_files")
+}
+
+model WorkProduct {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @map("project_id") @db.Uuid
+  roleId      String   @map("role_id") @db.Uuid
+  taskId      String?  @map("task_id") @db.Uuid
+  productType String   @map("product_type") @db.VarChar(32)
+  title       String   @db.VarChar(255)
+  description String?
+  fileUrl     String?  @map("file_url")
+  preview     String?
+  meta        Json     @default("{}")
+  createdBy   String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role    Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  task    Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  creator User    @relation(fields: [createdBy], references: [id])
+
+  @@index([projectId, productType])
+  @@index([roleId])
+  @@map("work_products")
+}
+
+model LlmCall {
+  id               String   @id @default(uuid()) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  roleId           String   @map("role_id") @db.Uuid
+  userId           String?  @map("user_id") @db.Uuid
+  modelName        String   @map("model_name") @db.VarChar(64)
+  promptTokens     Int      @default(0) @map("prompt_tokens")
+  completionTokens Int      @default(0) @map("completion_tokens")
+  totalTokens      Int      @default(0) @map("total_tokens")
+  costCny          Decimal  @default(0) @map("cost_cny") @db.Decimal(10, 4)
+  latencyMs        Int      @default(0) @map("latency_ms")
+  status           String   @default("success") @db.VarChar(16)
+  errorMsg         String?  @map("error_msg")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role    Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id])
+
+  @@index([projectId, createdAt])
+  @@index([roleId])
+  @@map("llm_calls")
+}
+
+// ---------------- 科研能力层 5 张 ----------------
+
+model Paper {
+  id            String   @id @default(uuid()) @db.Uuid
+  projectId     String?  @map("project_id") @db.Uuid // NULL = 公共库
+  source        String   @db.VarChar(32)
+  externalId    String   @map("external_id") @db.VarChar(128)
+  title         String
+  authors       Json     @default("[]")
+  abstract      String?
+  year          Int?
+  venue         String?  @db.VarChar(255)
+  doi           String?  @db.VarChar(128)
+  pdfUrl        String?  @map("pdf_url")
+  codeUrl       String?  @map("code_url")
+  keywords      String[]
+  citationCount Int      @default(0) @map("citation_count")
+  rawMeta       Json     @default("{}") @map("raw_meta")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project    Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  paperCards PaperCard[]
+
+  @@unique([projectId, source, externalId])
+  @@unique([projectId, doi]) // 同一项目内 DOI 唯一，防止跨源重复收录同一篇论文
+  @@index([source, externalId])
+  @@index([year])
+  @@map("papers")
+}
+
+model PaperCard {
+  id           String   @id @default(uuid()) @db.Uuid
+  projectId    String   @map("project_id") @db.Uuid
+  paperId      String   @map("paper_id") @db.Uuid
+  roleId       String   @map("role_id") @db.Uuid
+  authorUserId String   @map("author_user_id") @db.Uuid
+  // v2.0 简化：砍六字段表单，只留 Markdown 笔记 + tags（可行性调整⑥）
+  notes        String?
+  evidenceQuote   String?  @map("evidence_quote")
+  evidenceLocator String?  @map("evidence_locator") @db.VarChar(255)
+  evidenceStatus  String   @default("unverified") @map("evidence_status") @db.VarChar(16) // unverified/reviewed/conflicting
+  tags         String[]
+  isShared     Boolean  @default(false) @map("is_shared")
+  rating       Int      @default(3) @db.SmallInt
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  paper   Paper   @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  role    Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorUserId], references: [id])
+
+  @@index([projectId, paperId])
+  @@index([roleId])
+  @@map("paper_cards")
+}
+
+model DirectionNode {
+  id            String   @id @default(uuid()) @db.Uuid
+  projectId     String   @map("project_id") @db.Uuid
+  parentId      String?  @map("parent_id") @db.Uuid
+  rootTaskId    String?  @map("root_task_id") @db.Uuid
+  name          String   @db.VarChar(255)
+  description   String?
+  feasibility   Int?     @db.SmallInt
+  novelty       Int?     @db.SmallInt
+  impact        Int?     @db.SmallInt
+  evidenceCount Int      @default(0) @map("evidence_count")
+  status        String   @default("exploring") @db.VarChar(16) // exploring/selected/parked/dropped
+  createdBy     String   @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent      DirectionNode?  @relation("DirectionTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children    DirectionNode[] @relation("DirectionTree")
+  rootTask    Task?           @relation(fields: [rootTaskId], references: [id], onDelete: SetNull)
+  creator     User            @relation(fields: [createdBy], references: [id])
+  experiments Experiment[]
+
+  @@index([projectId])
+  @@index([parentId])
+  @@index([projectId, status])
+  @@map("direction_nodes")
+}
+
+model DecompResult {
+  id           String   @id @default(uuid()) @db.Uuid
+  projectId    String   @map("project_id") @db.Uuid
+  rootTaskId   String   @map("root_task_id") @db.Uuid
+  roleId       String   @map("role_id") @db.Uuid
+  inputText    String   @map("input_text")
+  subQuestions Json     @default("[]") @map("sub_questions")
+  methodology  String?
+  deliverables Json     @default("[]")
+  risks        Json     @default("[]")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project  Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  rootTask Task    @relation(fields: [rootTaskId], references: [id], onDelete: Cascade)
+  role     Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([rootTaskId])
+  @@map("decomp_results")
+}
+
+model Experiment {
+  id          String    @id @default(uuid()) @db.Uuid
+  projectId   String    @map("project_id") @db.Uuid
+  roleId      String    @map("role_id") @db.Uuid
+  taskId      String?   @map("task_id") @db.Uuid
+  directionId String?   @map("direction_id") @db.Uuid
+  title       String    @db.VarChar(255)
+  hypothesis  String?
+  setup       String?
+  result      String?
+  metric      Json      @default("{}")
+  conclusion  String?
+  logUrl      String?   @map("log_url")
+  status      String    @default("planned") @db.VarChar(16) // planned/running/succeeded/failed
+  runAt       DateTime? @map("run_at") @db.Timestamptz(6)
+  createdBy   String    @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role      Role           @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  task      Task?          @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  direction DirectionNode? @relation(fields: [directionId], references: [id], onDelete: SetNull)
+  creator   User           @relation(fields: [createdBy], references: [id])
+
+  @@index([projectId])
+  @@index([directionId])
+  @@map("experiments")
+}
+
+// ---------------- v2.0 新增 2 张 ----------------
+
+// 学术检索异步任务（断点③修复：慢操作不阻塞 HTTP）
+model SearchTask {
+  id         String    @id @default(uuid()) @db.Uuid
+  projectId  String    @map("project_id") @db.Uuid
+  query      String
+  sources    String[]  @default(["arxiv", "openalex"])
+  status     String    @default("pending") @db.VarChar(16) // pending/running/done/fail
+  result     Json?
+  errorMsg   String?   @map("error_msg")
+  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator User?   @relation(fields: [createdBy], references: [id])
+
+  @@index([projectId, status])
+  @@map("search_tasks")
+}
+
+// 任务↔文献/记忆/方向 引用关联（断点④修复：任务闭环）
+model TaskReference {
+  id        String   @id @default(uuid()) @db.Uuid
+  taskId    String   @map("task_id") @db.Uuid
+  refType   String   @map("ref_type") @db.VarChar(16) // paper / memory / direction
+  refId     String   @map("ref_id") @db.Uuid
+  note      String?
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  task    Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  creator User? @relation(fields: [createdBy], references: [id])
+
+  @@unique([taskId, refType, refId])
+  @@map("task_references")
+}
+
+model MemoryRevision {
+  id          String   @id @default(uuid()) @db.Uuid
+  memoryId    String   @map("memory_id") @db.Uuid
+  version     Int
+  title       String
+  content     String
+  status      String
+  actorId     String   @map("actor_id") @db.Uuid
+  reason      String?
+  sources     Json     @default("[]")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  memory      Memory   @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  @@unique([memoryId, version])
+  @@map("memory_revisions")
+}
+
+model MeetingBrief {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @map("project_id") @db.Uuid
+  requestKey  String   @map("request_key")
+  title       String
+  content     String
+  version     Int      @default(1)
+  status      String   @default("draft")
+  snapshot    Json
+  actions     Json     @default("[]")
+  edits       Json     @default("[]")
+  createdBy   String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@unique([projectId, requestKey])
+  @@map("meeting_briefs")
+}

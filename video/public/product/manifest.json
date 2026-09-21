@@ -1,0 +1,16 @@
+{
+  "captureDate": "2026-09-21",
+  "mode": "Existing BrainBot offline demo, dark theme, local Vite preview",
+  "project": "Mip-Splatting 复现",
+  "assets": [
+    {"file":"home.png","view":"团队入口","sourceComponent":"web/src/views/TeamHome.vue"},
+    {"file":"discussion.png","view":"AI 协作","sourceComponent":"web/src/views/Workbench.vue"},
+    {"file":"memory.png","view":"共享记忆","sourceComponent":"web/src/views/Workbench.vue"},
+    {"file":"provenance.png","view":"记忆溯源","sourceComponent":"web/src/components/MemoryTrace.vue"},
+    {"file":"research.png","view":"论文库","sourceComponent":"web/src/components/ResearchPanel.vue"},
+    {"file":"cards.png","view":"文献卡片","sourceComponent":"web/src/components/ResearchPanel.vue"},
+    {"file":"board.png","view":"任务看板","sourceComponent":"web/src/views/Workbench.vue"},
+    {"file":"document.png","view":"总文档","sourceComponent":"web/src/views/Workbench.vue"}
+  ],
+  "note":"Film callouts summarize existing demo content. Research verification steps are animated explanations, not a claim of live network operation."
+}

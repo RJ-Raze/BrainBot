@@ -1,0 +1,39 @@
+{
+  "name": "brainbot-product-film",
+  "version": "1.0.0",
+  "description": "BrainBot 45-second product demo film",
+  "repository": {},
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@remotion/cli": "4.0.526",
+    "@remotion/media": "4.0.526",
+    "@remotion/media-utils": "4.0.526",
+    "@remotion/transitions": "4.0.526",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.526"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.526",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.19.0",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "dev": "remotion studio src/index.ts --no-open",
+    "build": "remotion bundle src/index.ts",
+    "lint": "eslint src && tsc --noEmit",
+    "audio": "node scripts/generate-score.mjs",
+    "test:audio": "node scripts/test-score.mjs",
+    "render": "remotion render src/index.ts BrainBotDemo out/brainbot-demo.mp4 --codec=h264 --crf=18 --concurrency=2",
+    "prepare-preview": "node scripts/prepare-preview.mjs",
+    "preview": "node scripts/serve-preview.mjs",
+    "verify": "node scripts/verify-output.mjs"
+  },
+  "sideEffects": [
+    "*.css"
+  ]
+}
